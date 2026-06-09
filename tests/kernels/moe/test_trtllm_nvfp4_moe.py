@@ -5,7 +5,7 @@ Tests for the FlashInfer TRTLLM NvFP4 MoE backend
 (`TrtLlmNvFp4ExpertsModular`).
 
 Covers the activations the wrapper claims to support — SiLU, RELU^2 (non-gated),
-and GELU — including a Gemma4-shaped case (128 experts, top-k 8,
+SwigluStep, and GELU — including a Gemma4-shaped case (128 experts, top-k 8,
 intermediate_size 704) that exercises the non-256-aligned padding path.
 """
 
@@ -23,7 +23,10 @@ from tests.kernels.utils import torch_moe
 from vllm import _custom_ops as ops
 from vllm.config import ParallelConfig, VllmConfig, set_current_vllm_config
 from vllm.model_executor.custom_op import CustomOp, op_registry
-from vllm.model_executor.layers.activation import SiluAndMulWithClamp
+from vllm.model_executor.layers.activation import (
+    SiluAndMulWithClamp,
+    SwigluStepAndMul,
+)
 from vllm.model_executor.layers.fused_moe import fused_topk
 from vllm.model_executor.layers.fused_moe.activation import MoEActivation
 from vllm.model_executor.layers.fused_moe.all2all_utils import (
@@ -63,6 +66,7 @@ MNK_FACTORS = [
 _SWIGLU_LIMIT = 0.1
 _LARGE_OUTPUT1_SCALE = 32768.0
 _CLAMP_OP_NAME = "test_silu_and_mul_with_clamp"
+_SWIGLUSTEP_OP_NAME = "test_swiglustep_and_mul"
 
 # Test-only fixed-limit clamp. ``custom_op_name`` makes the class itself
 # valid as an ``activation=`` argument to ``torch_moe`` (which only looks
@@ -80,10 +84,28 @@ if _CLAMP_OP_NAME not in op_registry:
 
 SILU_WITH_CLAMP = op_registry[_CLAMP_OP_NAME]
 
+if _SWIGLUSTEP_OP_NAME not in op_registry:
+
+    @CustomOp.register(_SWIGLUSTEP_OP_NAME)
+    class _SwigluStepAndMulTest(SwigluStepAndMul):
+        custom_op_name = _SWIGLUSTEP_OP_NAME
+
+        def __init__(self) -> None:
+            super().__init__(limit=_SWIGLU_LIMIT)
+
+
+SWIGLUSTEP_WITH_CLAMP = op_registry[_SWIGLUSTEP_OP_NAME]
+
 
 ACTIVATION_CASES = [
     pytest.param(MoEActivation.SILU, MoEActivation.SILU, None, id="silu"),
     pytest.param(MoEActivation.SILU, SILU_WITH_CLAMP, _SWIGLU_LIMIT, id="silu_clamp"),
+    pytest.param(
+        MoEActivation.SWIGLUSTEP,
+        SWIGLUSTEP_WITH_CLAMP,
+        _SWIGLU_LIMIT,
+        id="swiglustep",
+    ),
     pytest.param(
         MoEActivation.RELU2_NO_MUL,
         MoEActivation.RELU2_NO_MUL,
@@ -108,7 +130,7 @@ def test_trtllm_fp4_moe_no_graph(
     topk: int,
     dtype: torch.dtype,
     activation: MoEActivation,
-    torch_activation: MoEActivation | type[SiluAndMulWithClamp],
+    torch_activation: MoEActivation | type[CustomOp],
     swiglu_limit: float | None,
     workspace_init,
 ):

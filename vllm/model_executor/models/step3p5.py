@@ -384,6 +384,7 @@ class FusedMoEBlock(nn.Module):
             renormalize=config.norm_expert_weight,
             quant_config=quant_config,
             activation=activation,
+            swiglu_limit=swiglu_limit,
             prefix=f"{prefix}.experts",
             scoring_func=getattr(config, "moe_router_activation", "sigmoid"),
             e_score_correction_bias=self.router_bias,

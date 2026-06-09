@@ -271,6 +271,7 @@ class FlashInferExperts(mk.FusedMoEExpertsModular):
         activation_str_to_value_map = {
             MoEActivation.SILU: ActivationType.Swiglu,  # This is the default
             MoEActivation.SWIGLUOAI: ActivationType.Swiglu,  # gpt-oss alias
+            MoEActivation.SWIGLUSTEP: ActivationType.SwigluStep,
             MoEActivation.RELU2_NO_MUL: ActivationType.Relu2,
         }
         assert activation in activation_str_to_value_map, (

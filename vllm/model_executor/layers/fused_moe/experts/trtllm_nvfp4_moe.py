@@ -77,6 +77,11 @@ class TrtLlmNvFp4ExpertsBase:
         else:
             self.gemm1_clamp_limit = None
 
+        if moe_config.activation == MoEActivation.SWIGLUSTEP:
+            assert self.gemm1_clamp_limit is not None, (
+                "SwigluStep requires gemm1_clamp_limit to be set."
+            )
+
     def process_weights_after_loading(self, layer: torch.nn.Module) -> None:
         layer.w13_weight_scale_2.data.mul_(layer.w13_input_scale)
         layer.w2_weight_scale_2.data.mul_(layer.w2_input_scale)
@@ -137,9 +142,10 @@ class TrtLlmNvFp4ExpertsBase:
 
     @staticmethod
     def _supports_activation(activation: MoEActivation) -> bool:
-        """Supports only SiLU, RELU^2 non-gated and GELU activation."""
+        """Supports SiLU, SwigluStep, RELU^2 non-gated, and GELU."""
         return activation in [
             MoEActivation.SILU,
+            MoEActivation.SWIGLUSTEP,
             MoEActivation.RELU2_NO_MUL,
             MoEActivation.GELU,
         ]

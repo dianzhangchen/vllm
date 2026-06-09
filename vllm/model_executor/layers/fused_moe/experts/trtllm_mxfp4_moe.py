@@ -15,6 +15,9 @@ from vllm.model_executor.layers.fused_moe.topk_weight_and_reduce import (
     TopKWeightAndReduceNoOP,
 )
 from vllm.model_executor.layers.fused_moe.utils import trtllm_moe_pack_topk_ids_weights
+from vllm.model_executor.layers.quantization.utils.flashinfer_utils import (
+    activation_to_flashinfer_int,
+)
 from vllm.model_executor.layers.quantization.utils.quant_utils import (
     QuantKey,
     kMxfp4Static,
@@ -79,6 +82,11 @@ class TrtLlmMxfp4ExpertsBase:
         else:
             self.gemm1_clamp_limit = None
 
+        if moe_config.activation == MoEActivation.SWIGLUSTEP:
+            assert self.gemm1_clamp_limit is not None, (
+                "SwigluStep requires gemm1_clamp_limit to be set."
+            )
+
         from vllm.config import get_current_vllm_config
 
         self.max_capture_size = (
@@ -107,7 +115,11 @@ class TrtLlmMxfp4ExpertsBase:
 
     @staticmethod
     def _supports_activation(activation: MoEActivation) -> bool:
-        return activation in (MoEActivation.SWIGLUOAI, MoEActivation.SILU)
+        return activation in (
+            MoEActivation.SWIGLUOAI,
+            MoEActivation.SWIGLUSTEP,
+            MoEActivation.SILU,
+        )
 
     @staticmethod
     def activation_format() -> mk.FusedMoEActivationFormat:
@@ -215,6 +227,7 @@ class TrtLlmMxfp4ExpertsMonolithic(
             routed_scaling_factor=None,
             routing_method_type=self.routing_method_type,
             do_finalize=True,
+            activation_type=activation_to_flashinfer_int(activation),
             tune_max_num_tokens=max(self.max_capture_size, 1),
             output=output,
         )
@@ -332,6 +345,7 @@ class TrtLlmMxfp4ExpertsModular(TrtLlmMxfp4ExpertsBase, mk.FusedMoEExpertsModula
             "routing_method_type": RoutingMethodType.Renormalize,
             "do_finalize": True,
             "enable_pdl": True,
+            "activation_type": activation_to_flashinfer_int(activation),
             "output": output,
             "tune_max_num_tokens": max(self.max_capture_size, 1),
         }
